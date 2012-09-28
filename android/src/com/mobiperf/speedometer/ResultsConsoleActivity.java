@@ -31,24 +31,23 @@ import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.ToggleButton;
 
+import java.util.List;
+
 /**
  * The activity that provides a console and progress bar of the ongoing measurement
- * 
- * @author wenjiezeng@google.com (Steve Zeng)
- *
  */
 public class ResultsConsoleActivity extends Activity {
   
   public static final String TAB_TAG = "MY_MEASUREMENTS";
   
   private ListView consoleView;
-  private ArrayAdapter<String> userResults;
-  private ArrayAdapter<String> systemResults;
+  private ArrayAdapter<String> results;
   BroadcastReceiver receiver;
   ProgressBar progressBar;
   ToggleButton showUserResultButton;
   ToggleButton showSystemResultButton;
   MeasurementScheduler scheduler = null;
+  boolean userResultsActive = false;
   
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -60,6 +59,8 @@ public class ResultsConsoleActivity extends Activity {
     filter.addAction(UpdateIntent.MEASUREMENT_PROGRESS_UPDATE_ACTION);
 
     this.consoleView = (ListView) this.findViewById(R.id.resultConsole);
+    this.results = new ArrayAdapter<String>(this, R.layout.list_item);
+    this.consoleView.setAdapter(this.results);
     this.progressBar = (ProgressBar) this.findViewById(R.id.progress_bar);
     this.progressBar.setMax(Config.MAX_PROGRESS_BAR_VALUE);
     this.progressBar.setProgress(Config.MAX_PROGRESS_BAR_VALUE);
@@ -67,17 +68,16 @@ public class ResultsConsoleActivity extends Activity {
     showSystemResultButton = (ToggleButton) findViewById(R.id.showSystemResults);
     showUserResultButton.setChecked(true);
     showSystemResultButton.setChecked(false);
+    userResultsActive = true;
     
     // We enforce a either-or behavior between the two ToggleButtons
     OnCheckedChangeListener buttonClickListener = new OnCheckedChangeListener() {
       @Override
       public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-        if (buttonView == showUserResultButton) {
-          switchBetweenResults(isChecked);
-        } else {
-          switchBetweenResults(!isChecked);
-        }
-      }};
+        Logger.d("onCheckedChanged");
+        switchBetweenResults(buttonView == showUserResultButton ? isChecked : !isChecked);
+      }
+    };
     showUserResultButton.setOnCheckedChangeListener(buttonClickListener);
     showSystemResultButton.setOnCheckedChangeListener(buttonClickListener);
     
@@ -86,17 +86,19 @@ public class ResultsConsoleActivity extends Activity {
       // All onXyz() callbacks are single threaded
       public void onReceive(Context context, Intent intent) {
         if (intent.getAction().equals(UpdateIntent.MEASUREMENT_PROGRESS_UPDATE_ACTION)) {
-          int progress = intent.getIntExtra(UpdateIntent.PROGRESS_PAYLOAD, 
-              Config.INVALID_PROGRESS);
+          int progress = intent.getIntExtra(UpdateIntent.PROGRESS_PAYLOAD, Config.INVALID_PROGRESS);
           int priority = intent.getIntExtra(UpdateIntent.TASK_PRIORITY_PAYLOAD, 
               MeasurementTask.INVALID_PRIORITY);
-          // Show user results if we there is currently a user measurement running
+          // Show user results if there is currently a user measurement running
           if (priority == MeasurementTask.USER_PRIORITY) {
+            Logger.d("progress update");
             switchBetweenResults(true);
           }
           upgradeProgress(progress, Config.MAX_PROGRESS_BAR_VALUE);
+        } else if (intent.getAction().equals(UpdateIntent.SCHEDULER_CONNECTED_ACTION)) {
+          Logger.d("scheduler connected");
+          switchBetweenResults(userResultsActive);
         }
-        getConsoleContentFromScheduler();
       }
     };
     this.registerReceiver(this.receiver, filter);
@@ -109,17 +111,13 @@ public class ResultsConsoleActivity extends Activity {
    * 
    * @param showUserResults If true, show user results; otherwise, show system results.
    */
-  private void switchBetweenResults(boolean showUserResults) {
+  private synchronized void switchBetweenResults(boolean showUserResults) {
+    userResultsActive = showUserResults;
     getConsoleContentFromScheduler();
     showUserResultButton.setChecked(showUserResults);
     showSystemResultButton.setChecked(!showUserResults);
-    if (showUserResults) {
-      Logger.d("switchBetweenResults: showing " + userResults.getCount() + " user results");
-      this.consoleView.setAdapter(userResults);
-    } else {
-      Logger.d("switchBetweenResults: showing " + systemResults.getCount() + " system results");
-      this.consoleView.setAdapter(systemResults);
-    }
+    Logger.d("switchBetweenResults: showing " + results.getCount() + " " +
+             (showUserResults ? "user" : "system") + " results");
   }
   
   /**
@@ -131,9 +129,8 @@ public class ResultsConsoleActivity extends Activity {
       progressBar.setProgress(progress);
       this.progressBar.setVisibility(View.VISIBLE);
     } else {
-      /* UserMeasurementTask broadcast a progress greater than max to indicate the
-       * termination of the measurement
-       */
+      // UserMeasurementTask broadcast a progress greater than max to indicate the termination of
+      // the measurement.
       this.progressBar.setVisibility(View.INVISIBLE);
     }
   }
@@ -151,12 +148,19 @@ public class ResultsConsoleActivity extends Activity {
       SpeedometerApp parent = (SpeedometerApp) getParent();
       scheduler = parent.getScheduler();
     }
+    // Scheduler may have not had time to start yet. When it does, the intent above will call this
+    // again.
     if (scheduler != null) {
-      // In case scheduler has not started yet.
-      userResults = new ArrayAdapter<String>(this, R.layout.list_item,
-          scheduler.getUserResults());
-      systemResults = new ArrayAdapter<String>(this, R.layout.list_item,
-          scheduler.getSystemResults());
+      Logger.d("Updating measurement results from thread " + Thread.currentThread().getName());
+      results.clear();
+      final List<String> scheduler_results =
+          (userResultsActive ? scheduler.getUserResults() : scheduler.getSystemResults());
+      for (String result : scheduler_results) {
+        results.add(result);
+      }
+      runOnUiThread(new Runnable() {
+        public void run() { results.notifyDataSetChanged(); }
+      });
     }
   }
 }

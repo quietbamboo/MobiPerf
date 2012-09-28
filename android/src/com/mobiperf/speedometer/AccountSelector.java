@@ -14,6 +14,8 @@
  */
 package com.mobiperf.speedometer;
 
+import com.mobiperf.util.PhoneUtils;
+
 import android.accounts.Account;
 import android.accounts.AccountManager;
 import android.accounts.AccountManagerCallback;
@@ -22,7 +24,9 @@ import android.accounts.AuthenticatorException;
 import android.accounts.OperationCanceledException;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.util.Log;
 
 import org.apache.http.HttpResponse;
@@ -40,10 +44,6 @@ import java.util.concurrent.Future;
 
 /**
  * Helper class for google account checkins
- * 
- * @author mdw@google.com (Matt Welsh)
- * @author wenjiezeng@google.com (Steve Zeng)
- *
  */
 public class AccountSelector {
   private static final String ACCOUNT_TYPE = "com.google";
@@ -51,17 +51,20 @@ public class AccountSelector {
   // The authentication period in milliseconds
   private static final long AUTHENTICATE_PERIOD_MSEC = 24 * 3600 * 1000;
   private Context context;
-  private Checkin checkin;
   private String authToken = null;
   private ExecutorService checkinExecutor = null;
   private Future<Cookie> checkinFuture = null;
   private long lastAuthTime = 0;
   private boolean authImmediately = false;
+  private PhoneUtils phoneUtils;
+
+  private boolean isAnonymous = true;
+  public boolean isAnonymous() { return isAnonymous; }
   
-  public AccountSelector(Context context, Checkin checkin) {
+  public AccountSelector(Context context) {
     this.context = context;
-    this.checkin = checkin;
     this.checkinExecutor = Executors.newFixedThreadPool(1);
+    this.phoneUtils = PhoneUtils.getPhoneUtils();
   }
   
   /** Returns the Future to monitor the checkin progress */
@@ -100,6 +103,21 @@ public class AccountSelector {
     return this.lastAuthTime;
   }
   
+  /**
+   * Return the list of account names for users to select
+   */
+  public static String[] getAccountList(Context context) {
+    AccountManager accountManager = AccountManager.get(context.getApplicationContext());
+    Account[] accounts = accountManager.getAccountsByType(ACCOUNT_TYPE);
+    int numAccounts = accounts == null ? 1 : accounts.length + 1;
+    String[] accountNames = new String[numAccounts];
+    for (int i = 0 ; i < accounts.length ; i++) {
+      accountNames[i] = accounts[i].name;
+    }
+    accountNames[numAccounts - 1] = context.getString(R.string.defaultUser);
+    return accountNames;
+  }
+  
   /** Starts an authentication request  */
   public void authenticate() 
     throws OperationCanceledException, AuthenticatorException, IOException {
@@ -119,8 +137,7 @@ public class AccountSelector {
     Logger.i("Authenticating. Last authentication is " + 
         timeSinceLastAuth / 1000 / 60 + " minutes ago. ");
     
-    AccountManager accountManager = AccountManager.get(
-        context.getApplicationContext());
+    AccountManager accountManager = AccountManager.get(context.getApplicationContext());
     if (this.authToken != null) {
       // There will be no effect on the token if it is still valid
       Logger.i("Invalidating token");
@@ -130,20 +147,43 @@ public class AccountSelector {
     Account[] accounts = accountManager.getAccountsByType(ACCOUNT_TYPE);
     Logger.i("Got " + accounts.length + " accounts");
     
+    SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this.context);
+    String selectedAccount = prefs.getString(Config.PREF_KEY_SELECTED_ACCOUNT, null);
+   
+    final String defaultUserName = context.getString(R.string.defaultUser);
+    isAnonymous = true;
+    if (selectedAccount != null && selectedAccount.equals(defaultUserName)) {
+      return;
+    }
+
     if (accounts != null && accounts.length > 0) {
-      // TODO(mdw): If multiple accounts, need to pick the correct one
-      Account accountToUse = accounts[0];
-      // We prefer google's corporate account to personal accounts such as somebody@gmail.com
-      for (Account account : accounts) {
-        if (account.name.toLowerCase().trim().endsWith(ACCOUNT_NAME)) {
-          Logger.i("Using the preferred google.com account: " + account.name);
-          accountToUse = account;
-          break;
+      // Default account should be the Anonymous account
+      Account accountToUse = accounts[accounts.length-1];
+      if (!accounts[accounts.length-1].name.equals(defaultUserName)) {
+        for (Account account : accounts) {
+          if (account.name.equals(defaultUserName)) {
+            accountToUse = account;
+            break;
+          }
+        }
+      }
+      if (selectedAccount != null) {
+        for (Account account : accounts) {
+          if (account.name.equals(selectedAccount)) {
+            accountToUse = account;
+            break;
+          }
         }
       }
       
+      isAnonymous = accountToUse.name.equals(defaultUserName);
+     
+      if (isAnonymous) {
+        Logger.d("Skipping authentication as account is " + defaultUserName);
+        return;
+      }
+
       Logger.i("Trying to get auth token for " + accountToUse);
-      
       AccountManagerFuture<Bundle> future = accountManager.getAuthToken(
           accountToUse, "ah", false, new AccountManagerCallback<Bundle>() {
         @Override
@@ -205,8 +245,8 @@ public class AccountSelector {
       DefaultHttpClient httpClient = new DefaultHttpClient();
       boolean success = false;
       try {
-        String loginUrlPrefix = checkin.getServerUrl() +
-          "/_ah/login?continue=" + checkin.getServerUrl() + 
+        String loginUrlPrefix = phoneUtils.getServerUrl() +
+          "/_ah/login?continue=" + phoneUtils.getServerUrl() + 
           "&action=Login&auth=";
         // Don't follow redirects
         httpClient.getParams().setBooleanParameter(
