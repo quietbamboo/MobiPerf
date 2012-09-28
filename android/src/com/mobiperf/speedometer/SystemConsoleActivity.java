@@ -29,9 +29,6 @@ import android.widget.ListView;
 
 /**
  * The activity that provides a console and progress bar of the ongoing measurement
- * 
- * @author wenjiezeng@google.com (Steve Zeng)
- *
  */
 public class SystemConsoleActivity extends Activity {
   private ListView consoleView;
@@ -88,6 +85,7 @@ public class SystemConsoleActivity extends Activity {
   }
   
   private void updateConsole() {
+    Logger.d("Updating system console from thread " + Thread.currentThread().getName());
     if (scheduler != null) {
       consoleView.setAdapter(new ArrayAdapter<String>(
           this, R.layout.list_item, scheduler.getSystemConsole()));
