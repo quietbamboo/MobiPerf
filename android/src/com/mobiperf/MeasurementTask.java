@@ -22,6 +22,7 @@ import com.mobiperf.measurements.HttpTask;
 import com.mobiperf.measurements.PingTask;
 import com.mobiperf.measurements.TracerouteTask;
 import com.mobiperf.measurements.UDPBurstTask;
+import com.mobiperf.measurements.TCPThroughputTask;
 
 import java.io.InvalidClassException;
 import java.util.HashMap;
@@ -64,14 +65,18 @@ public abstract class MeasurementTask implements Callable<MeasurementResult>, Co
     measurementDescToType.put(TracerouteTask.DESCRIPTOR, TracerouteTask.TYPE);
     measurementTypes.put(DnsLookupTask.TYPE, DnsLookupTask.class);
     measurementDescToType.put(DnsLookupTask.DESCRIPTOR, DnsLookupTask.TYPE);
-    // TODO(dominic): reinstate this when we're ready for m-lab support.
-    // measurementTypes.put(UDPBurstTask.TYPE, UDPBurstTask.class);
-    // measurementDescToType.put(UDPBurstTask.DESCRIPTOR, UDPBurstTask.TYPE);    
+    measurementTypes.put(TCPThroughputTask.TYPE, TCPThroughputTask.class);
+    measurementDescToType.put(TCPThroughputTask.DESCRIPTOR, TCPThroughputTask.TYPE);
+  }
+  
+  /** Gets the currently available measurement descriptions*/
+  public static Set<String> getMeasurementNames() {
+    return measurementDescToType.keySet();
   }
   
   /** Gets the currently available measurement types*/
-  public static Set<String> getMeasurementNames() {
-    return measurementDescToType.keySet();
+  public static Set<String> getMeasurementTypes() {
+    return measurementTypes.keySet();
   }
   
   /** Get the type of a measurement based on its name. Type is for JSON interface only
