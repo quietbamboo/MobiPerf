@@ -29,10 +29,10 @@ else:
   # Appengine provides (as of May 2011).
   use_library('django', '1.2')
 
-#from google.appengine.ext.webapp import Request
-#from google.appengine.ext.webapp import RequestHandler
-#from google.appengine.ext.webapp import Response
-#from google.appengine.ext.webapp import template
+# from google.appengine.ext.webapp import Request
+# from google.appengine.ext.webapp import RequestHandler
+# from google.appengine.ext.webapp import Response
+# from google.appengine.ext.webapp import template
 from google.appengine.ext.webapp.util import run_wsgi_app
 
 # pylint: disable-msg=W0611
@@ -45,6 +45,7 @@ from gspeedometer.controllers import measurement
 from gspeedometer.controllers import schedule
 from gspeedometer.controllers import timeseries
 import routes
+from gspeedometer import config
 
 m = routes.Mapper()
 m.connect('/',
@@ -55,6 +56,10 @@ m.connect('/about',
           controller='about:About',
           action='About')
 
+m.connect('/help',
+          controller='help:Help',
+          action='Help')
+
 m.connect('/checkin',
           controller='checkin:Checkin',
           action='Checkin')
@@ -62,6 +67,10 @@ m.connect('/checkin',
 m.connect('/anonymous/checkin',
           controller='checkin:Checkin',
           action='Checkin')
+
+m.connect('/anonymous/',
+          controller='home:Home',
+          action='Dashboard')
 
 m.connect('/anonymous/postmeasurement',
           controller='measurement:Measurement',
@@ -140,7 +149,21 @@ m.connect('/admin/archive/cron',
           controller='archive:Archive',
           action='ArchiveToGoogleStorage')
 
-# For backend instance, give it something that won't 
+# to upload data on packet size impact for rrc inference
+m.connect('/rrc/uploadRRCInferenceSizes',
+            controller='RRCstates:RRCStates',
+            action='uploadRRCSizes')
+
+m.connect('/anonymous/rrc/uploadRRCInferenceSizes',
+            controller='RRCstates:RRCStates',
+            action='uploadRRCInferenceSizes')
+
+# raw data for performing RRC inference
+m.connect('/anonymous/rrc/uploadRRCInference',
+            controller='RRCstates:RRCStates',
+            action='uploadRRCInference')
+
+# For backend instance, give it something that won't
 # return a 500 error.
 m.connect('/_ah/start',
           controller='about:About',
@@ -167,7 +190,7 @@ def profile_main():
   print '</pre>'
 
 
-#main = profile_main
+# main = profile_main
 main = real_main
 
 

@@ -68,7 +68,7 @@ class Checkin(webapp.RequestHandler):
       logging.info('Sending checkin response: %s', device_schedule_json)
       self.response.headers['Content-Type'] = 'application/json'
       self.response.out.write(device_schedule_json)
-
+ 
     except Exception, e:
       logging.error('Got exception during checkin: %s', e)
       self.response.headers['Content-Type'] = 'application/json'
@@ -85,7 +85,12 @@ def GetDeviceSchedule(device_properties):
   schedule = model.Task.all()
   for task in schedule:
     if not task.filter:
-      matched.add(task)
+      try:
+        app_version = float(device_properties.app_version[1:])
+        if task.type != "tcpthroughput" or app_version > 2.0:
+          matched.add(task)
+      except:
+        matched.add(task)
     else:
       # Does the filter match this device?
       devices = []
